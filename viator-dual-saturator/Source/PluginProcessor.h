@@ -62,16 +62,12 @@ public:
     
 private:
     juce::dsp::ProcessSpec _spec;
-    juce::dsp::LinkwitzRileyFilter<float> _evenBandFilter;
+    juce::dsp::LinkwitzRileyFilter<float> _highBandFilter;
     juce::dsp::LinkwitzRileyFilter<float> _evenDcFilter;
-    juce::dsp::LinkwitzRileyFilter<float> _oddBandFilter;
-    std::unique_ptr<juce::dsp::Oversampling<float>> _evenHQModule;
-    std::unique_ptr<juce::dsp::Oversampling<float>> _oddHQModule;
+    std::unique_ptr<juce::dsp::Oversampling<float>> _hqModule;
     juce::dsp::Gain<float> _oddGain;
     juce::dsp::Gain<float> _evenGain;
     juce::dsp::Gain<float> _inputGain;
-    void applyEvenDistortion(juce::dsp::AudioBlock<float>& block, float drive, float cutoff);
-    void applyOddDistortion(juce::dsp::AudioBlock<float>& block, float drive, float cutoff);
     juce::AudioBuffer<float> _evenBuffer;
     juce::AudioBuffer<float> _oddBuffer;
     juce::AudioBuffer<float> _dryBuffer;
