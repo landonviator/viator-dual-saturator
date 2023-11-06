@@ -20,13 +20,14 @@ void ViatorParameters::Params::initSliderParams()
     _sliderParams.push_back({ViatorParameters::oddID, ViatorParameters::oddName, -30.0f, 30.0f, 0.0f, skew::kNoSkew, 0.0, type::kFloat});
     _sliderParams.push_back({ViatorParameters::volumeID, ViatorParameters::volumeName, -30.0f, 30.0f, 0.0f, skew::kNoSkew, 0.0, type::kFloat});
     _sliderParams.push_back({ViatorParameters::mixID, ViatorParameters::mixName, 0.0f, 100.0f, 100.0f, skew::kNoSkew, 0.0, type::kInt});
-    _sliderParams.push_back({ViatorParameters::cutoffID, ViatorParameters::cutoffName, 20.0f, 20000.0f, 0.0f, skew::kSkew, 1000.0, type::kInt});
+    _sliderParams.push_back({ViatorParameters::cutoffID, ViatorParameters::cutoffName, 300.0f, 20000.0f, 1000.0f, skew::kSkew, 1000.0, type::kInt});
 }
 
 void ViatorParameters::Params::initButtonParams()
 {
     _buttonParams.push_back({ViatorParameters::evenBypassID, ViatorParameters::evenBypassName, false});
     _buttonParams.push_back({ViatorParameters::oddBypassID, ViatorParameters::oddBypassName, false});
+    _buttonParams.push_back({ViatorParameters::hqID, ViatorParameters::hqName, false});
 }
 
 void ViatorParameters::Params::initMenuParams()

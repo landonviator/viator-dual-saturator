@@ -162,6 +162,24 @@ juce::AudioProcessorValueTreeState::ParameterLayout ViatordualsaturatorAudioProc
 
 void ViatordualsaturatorAudioProcessor::parameterChanged(const juce::String &parameterID, float newValue)
 {
+    if (parameterID == "hqID")
+    {
+        if (newValue)
+        {
+            _spec.sampleRate = _evenHQModule->getOversamplingFactor() * getSampleRate();
+            _evenBandFilter.prepare(_spec);
+            _oddBandFilter.prepare(_spec);
+            _evenDcFilter.prepare(_spec);
+        }
+        
+        else
+        {
+            _spec.sampleRate = getSampleRate();
+            _evenBandFilter.prepare(_spec);
+            _oddBandFilter.prepare(_spec);
+            _evenDcFilter.prepare(_spec);
+        }
+    }
 }
 
 void ViatordualsaturatorAudioProcessor::updateParameters()
@@ -171,20 +189,24 @@ void ViatordualsaturatorAudioProcessor::updateParameters()
 //==============================================================================
 void ViatordualsaturatorAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    _spec.sampleRate = sampleRate;
+    _evenHQModule = std::make_unique<juce::dsp::Oversampling<float>>(getTotalNumInputChannels(), 2, juce::dsp::Oversampling<float>::FilterType::filterHalfBandPolyphaseIIR);
+    _evenHQModule->initProcessing(samplesPerBlock);
+    _oddHQModule = std::make_unique<juce::dsp::Oversampling<float>>(getTotalNumInputChannels(), 2, juce::dsp::Oversampling<float>::FilterType::filterHalfBandPolyphaseIIR);
+    _oddHQModule->initProcessing(samplesPerBlock);
+    auto _hqState = _treeState.getRawParameterValue("hqID")->load();
+    
+    _spec.sampleRate = _hqState ? sampleRate * _evenHQModule->getOversamplingFactor() : sampleRate;
     _spec.maximumBlockSize = samplesPerBlock;
     _spec.numChannels = getTotalNumInputChannels();
     
     _evenBandFilter.prepare(_spec);
     _evenBandFilter.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
-    _evenBandFilter.setCutoffFrequency(1000.0);
     _evenDcFilter.prepare(_spec);
     _evenDcFilter.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
-    _evenDcFilter.setCutoffFrequency(15.0);
     _oddBandFilter.prepare(_spec);
     _oddBandFilter.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
-    _oddBandFilter.setCutoffFrequency(1000.0);
     
+    _spec.sampleRate = sampleRate;
     _oddGain.prepare(_spec);
     _oddGain.setRampDurationSeconds(0.02);
     _evenGain.prepare(_spec);
@@ -242,12 +264,19 @@ void ViatordualsaturatorAudioProcessor::processBlock (juce::AudioBuffer<float>& 
     const auto oddBypass = _treeState.getRawParameterValue("oddBypassID")->load();
     const auto evenBypass = _treeState.getRawParameterValue("evenBypassID")->load();
     const auto mix = _treeState.getRawParameterValue("mixID")->load() * 0.01;
+    const auto cutoff = _treeState.getRawParameterValue("cutoffID")->load();
+    const auto _hqState = _treeState.getRawParameterValue("hqID")->load();
+    _evenBandFilter.setCutoffFrequency(_treeState.getRawParameterValue("cutoffID")->load());
+    _oddBandFilter.setCutoffFrequency(_treeState.getRawParameterValue("cutoffID")->load());
+    _evenDcFilter.setCutoffFrequency(15.0);
 
     //--------------------------------------------------------------------------------
     // Define audio blocks for the buffers
     //--------------------------------------------------------------------------------
     juce::dsp::AudioBlock<float> oddBlock {_oddBuffer};
     juce::dsp::AudioBlock<float> evenBlock {_evenBuffer};
+    juce::dsp::AudioBlock<float> hqOddBlock {_oddBuffer};
+    juce::dsp::AudioBlock<float> hqEvenBlock {_evenBuffer};
     juce::dsp::AudioBlock<float> block {buffer};
     
     //--------------------------------------------------------------------------------
@@ -270,7 +299,18 @@ void ViatordualsaturatorAudioProcessor::processBlock (juce::AudioBuffer<float>& 
     //--------------------------------------------------------------------------------
     if (!oddBypass)
     {
-        applyOddDistortion(_oddBuffer, oddDriveGain);
+        if (_hqState)
+        {
+            hqOddBlock = _oddHQModule->processSamplesUp(oddBlock);
+            applyOddDistortion(hqOddBlock, oddDriveGain, cutoff);
+            _oddHQModule->processSamplesDown(oddBlock);
+        }
+        
+        else
+        {
+            applyOddDistortion(oddBlock, oddDriveGain, cutoff);
+        }
+        
         _oddGain.process(juce::dsp::ProcessContextReplacing<float>(oddBlock));
     }
     
@@ -279,7 +319,18 @@ void ViatordualsaturatorAudioProcessor::processBlock (juce::AudioBuffer<float>& 
     //--------------------------------------------------------------------------------
     if (!evenBypass)
     {
-        applyEvenDistortion(_evenBuffer, evenDriveGain);
+        if (_hqState)
+        {
+            hqEvenBlock = _evenHQModule->processSamplesUp(evenBlock);
+            applyEvenDistortion(hqEvenBlock, evenDriveGain, cutoff);
+            _evenHQModule->processSamplesDown(evenBlock);
+        }
+        
+        else
+        {
+            applyEvenDistortion(evenBlock, evenDriveGain ,cutoff);
+        }
+        
         _evenGain.process(juce::dsp::ProcessContextReplacing<float>(evenBlock));
     }
     
@@ -323,34 +374,34 @@ void ViatordualsaturatorAudioProcessor::processBlock (juce::AudioBuffer<float>& 
     buffer.applyGain(outputGain);
 }
 
-void ViatordualsaturatorAudioProcessor::applyEvenDistortion(juce::AudioBuffer<float> &buffer, float drive)
+void ViatordualsaturatorAudioProcessor::applyEvenDistortion(juce::dsp::AudioBlock<float>& block, float drive, float cutoff)
 {
-    auto data = buffer.getArrayOfWritePointers();
-    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    for (int channel = 0; channel < block.getNumChannels(); ++channel)
     {
-        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        auto data = block.getChannelPointer(channel);
+        for (int sample = 0; sample < block.getNumSamples(); ++sample)
         {
-            auto xn = data[channel][sample];
+            auto xn = data[sample];
             auto xnHigh = _evenBandFilter.processSample(channel, xn);
             auto evenHarmonics = 0.65 * (xnHigh + (std::abs(xnHigh * drive) - 0.5));
-            auto outputMix = _evenDcFilter.processSample(channel, evenHarmonics) * 0.5 + xn;
-            data[channel][sample] = outputMix * 0.5;
+            auto outputMix = evenHarmonics + xn;
+            data[sample] = _evenDcFilter.processSample(channel, outputMix);
         }
     }
 }
 
-void ViatordualsaturatorAudioProcessor::applyOddDistortion(juce::AudioBuffer<float> &buffer, float drive)
+void ViatordualsaturatorAudioProcessor::applyOddDistortion(juce::dsp::AudioBlock<float>& block, float drive, float cutoff)
 {
-    auto data = buffer.getArrayOfWritePointers();
-    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    for (int channel = 0; channel < block.getNumChannels(); ++channel)
     {
-        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        auto data = block.getChannelPointer(channel);
+        for (int sample = 0; sample < block.getNumSamples(); ++sample)
         {
-            const auto xn = data[channel][sample];
+            const auto xn = data[sample];
             const auto xnHigh = _oddBandFilter.processSample(channel, xn);
             const auto softClip = _piDivisor * std::atan(xnHigh * drive);
-            const auto outputMix = softClip * 0.25 + xn;
-            data[channel][sample] = outputMix * 0.5;
+            const auto outputMix = softClip + xn;
+            data[sample] = outputMix * 0.5;
         }
     }
 }

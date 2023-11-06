@@ -31,4 +31,7 @@ extern const juce::String mixName = "Mix";
 
 extern const juce::String cutoffID = "cutoffID";
 extern const juce::String cutoffName = "Cutoff";
+
+extern const juce::String hqID = "hqID";
+extern const juce::String hqName = "HQ";
 }

@@ -33,4 +33,7 @@ extern const juce::String mixName;
 
 extern const juce::String cutoffID;
 extern const juce::String cutoffName;
+
+extern const juce::String hqID;
+extern const juce::String hqName;
 }
