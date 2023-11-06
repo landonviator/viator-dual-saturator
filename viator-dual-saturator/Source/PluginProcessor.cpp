@@ -199,6 +199,7 @@ void ViatordualsaturatorAudioProcessor::prepareToPlay (double sampleRate, int sa
     _highBandFilter.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
     _evenDcFilter.prepare(_spec);
     _evenDcFilter.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
+    _evenDriveGain.reset(_spec.sampleRate, 0.02);
     
     _spec.sampleRate = sampleRate;
     _oddGain.prepare(_spec);
@@ -207,6 +208,7 @@ void ViatordualsaturatorAudioProcessor::prepareToPlay (double sampleRate, int sa
     _evenGain.setRampDurationSeconds(0.02);
     _inputGain.prepare(_spec);
     _inputGain.setRampDurationSeconds(0.02);
+    
 }
 
 void ViatordualsaturatorAudioProcessor::releaseResources()
@@ -266,16 +268,13 @@ void ViatordualsaturatorAudioProcessor::processBlock (juce::AudioBuffer<float>& 
     {
         hqBlock = _hqModule->processSamplesUp(block);
         evenOddProcess(juce::dsp::ProcessContextReplacing<float>(hqBlock));
-        _evenDcFilter.process(juce::dsp::ProcessContextReplacing<float>(hqBlock));
         _hqModule->processSamplesDown(block);
     }
     
     else
     {
         evenOddProcess(juce::dsp::ProcessContextReplacing<float>(block));
-        _evenDcFilter.process(juce::dsp::ProcessContextReplacing<float>(block));
     }
-    
     
     //--------------------------------------------------------------------------------
     //Apply output volume
@@ -293,7 +292,7 @@ void ViatordualsaturatorAudioProcessor::evenOddProcess(const ProcessContext& con
     const auto oddDrive = _treeState.getRawParameterValue("oddDriveID")->load();
     const auto oddDriveGain = juce::Decibels::decibelsToGain(oddDrive);
     const auto evenDrive = _treeState.getRawParameterValue("evenDriveID")->load();
-    const auto evenDriveGain = juce::Decibels::decibelsToGain(evenDrive);
+    _evenDriveGain.setTargetValue(juce::Decibels::decibelsToGain(evenDrive * 0.5));
     const auto oddBypass = _treeState.getRawParameterValue("oddBypassID")->load();
     const auto evenBypass = _treeState.getRawParameterValue("evenBypassID")->load();
     const auto mix = _treeState.getRawParameterValue("mixID")->load() * 0.01;
@@ -325,8 +324,9 @@ void ViatordualsaturatorAudioProcessor::evenOddProcess(const ProcessContext& con
             const auto xnHigh = _highBandFilter.processSample(static_cast<int>(channel), xn);
             
             // even
-            auto xnEven = 0.65 * (xnHigh + (std::abs(xnHigh * evenDriveGain) - 0.5)) + xn;
-            auto xnEvenOutput = xnEven * evenGainGain * evenBypass;
+            //auto xnEven = 0.65 * (xnHigh + (std::abs(xnHigh * evenDriveGain) - 0.5)) + xn;
+            auto xnEven = 1.0 / (1.0 + std::exp(-xnHigh * _evenDriveGain.getNextValue()));
+            auto xnEvenOutput = _evenDcFilter.processSample(int(channel), xnEven) * evenGainGain * evenBypass;
             
             // odd
             const auto xnOdd = (_piDivisor * std::atan(xnHigh * oddDriveGain) + xn) * 0.5;

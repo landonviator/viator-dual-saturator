@@ -71,6 +71,7 @@ private:
     juce::AudioBuffer<float> _evenBuffer;
     juce::AudioBuffer<float> _oddBuffer;
     juce::AudioBuffer<float> _dryBuffer;
+    juce::SmoothedValue<float> _evenDriveGain = 1.0;
     
     template <typename ProcessContext>
     void evenOddProcess(const ProcessContext& context) noexcept;
