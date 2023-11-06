@@ -76,6 +76,9 @@ private:
     juce::AudioBuffer<float> _oddBuffer;
     juce::AudioBuffer<float> _dryBuffer;
     
+    template <typename ProcessContext>
+    void evenOddProcess(const ProcessContext& context) noexcept;
+    
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void parameterChanged (const juce::String& parameterID, float newValue) override;
     using Parameter = juce::AudioProcessorValueTreeState::Parameter;
