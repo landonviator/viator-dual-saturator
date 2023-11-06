@@ -255,6 +255,7 @@ void ViatordualsaturatorAudioProcessor::processBlock (juce::AudioBuffer<float>& 
     //--------------------------------------------------------------------------------
     _oddGain.setGainDecibels(oddGain < 0.0 ? oddGain * 4.0 : oddGain);
     _evenGain.setGainDecibels(evenGain < 0.0 ? evenGain * 4.0 : evenGain);
+    _dryBuffer.makeCopyOf(buffer);
     _inputGain.setGainDecibels(inputDB - 7.0);
     _inputGain.process(juce::dsp::ProcessContextReplacing<float>(block));
     
@@ -301,6 +302,18 @@ void ViatordualsaturatorAudioProcessor::processBlock (juce::AudioBuffer<float>& 
         for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
         {
             buffer.addFrom(channel, 0, _evenBuffer, channel, 0, buffer.getNumSamples());
+        }
+    }
+    
+    //--------------------------------------------------------------------------------
+    // Mix between dry and wet samples
+    //--------------------------------------------------------------------------------
+    auto data = buffer.getArrayOfWritePointers();
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        {
+            data[channel][sample] = (1.0 - mix) * _dryBuffer.getSample(channel, sample) + data[channel][sample] * mix;
         }
     }
     
