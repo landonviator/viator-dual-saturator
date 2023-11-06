@@ -174,6 +174,20 @@ void ViatordualsaturatorAudioProcessor::prepareToPlay (double sampleRate, int sa
     _spec.sampleRate = sampleRate;
     _spec.maximumBlockSize = samplesPerBlock;
     _spec.numChannels = getTotalNumInputChannels();
+    
+    _evenBandFilter.prepare(_spec);
+    _evenBandFilter.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
+    _evenBandFilter.setCutoffFrequency(1000.0);
+    _oddBandFilter.prepare(_spec);
+    _oddBandFilter.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
+    _oddBandFilter.setCutoffFrequency(1000.0);
+    
+    _oddGain.prepare(_spec);
+    _oddGain.setRampDurationSeconds(0.02);
+    _evenGain.prepare(_spec);
+    _evenGain.setRampDurationSeconds(0.02);
+    _inputGain.prepare(_spec);
+    _inputGain.setRampDurationSeconds(0.02);
 }
 
 void ViatordualsaturatorAudioProcessor::releaseResources()
@@ -210,7 +224,119 @@ bool ViatordualsaturatorAudioProcessor::isBusesLayoutSupported (const BusesLayou
 
 void ViatordualsaturatorAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
-    juce::ScopedNoDenormals noDenormals;
+    //--------------------------------------------------------------------------------
+    // Define local variables from parameters
+    //--------------------------------------------------------------------------------
+    const auto inputDB = _treeState.getRawParameterValue("gainID")->load();
+    const auto outputDB = _treeState.getRawParameterValue("volumeID")->load();
+    const auto outputGain = juce::Decibels::decibelsToGain(outputDB);
+    const auto oddGain = _treeState.getRawParameterValue("oddID")->load();
+    const auto evenGain = _treeState.getRawParameterValue("evenID")->load();
+    const auto oddDrive = _treeState.getRawParameterValue("oddDriveID")->load();
+    const auto oddDriveGain = juce::Decibels::decibelsToGain(oddDrive);
+    const auto evenDrive = _treeState.getRawParameterValue("evenDriveID")->load();
+    const auto evenDriveGain = juce::Decibels::decibelsToGain(evenDrive);
+    const auto oddBypass = _treeState.getRawParameterValue("oddBypassID")->load();
+    const auto evenBypass = _treeState.getRawParameterValue("evenBypassID")->load();
+    const auto mix = _treeState.getRawParameterValue("mixID")->load() * 0.01;
+
+    //--------------------------------------------------------------------------------
+    // Define audio blocks for the buffers
+    //--------------------------------------------------------------------------------
+    juce::dsp::AudioBlock<float> oddBlock {_oddBuffer};
+    juce::dsp::AudioBlock<float> evenBlock {_evenBuffer};
+    juce::dsp::AudioBlock<float> block {buffer};
+    
+    //--------------------------------------------------------------------------------
+    // Update gain modules for each buffer
+    //--------------------------------------------------------------------------------
+    _oddGain.setGainDecibels(oddGain < 0.0 ? oddGain * 4.0 : oddGain);
+    _evenGain.setGainDecibels(evenGain < 0.0 ? evenGain * 4.0 : evenGain);
+    _inputGain.setGainDecibels(inputDB - 7.0);
+    _inputGain.process(juce::dsp::ProcessContextReplacing<float>(block));
+    
+    //--------------------------------------------------------------------------------
+    // Set odd and even buffers
+    //--------------------------------------------------------------------------------
+    _oddBuffer.makeCopyOf(buffer);
+    _evenBuffer.makeCopyOf(buffer);
+    
+    //--------------------------------------------------------------------------------
+    // Apply odd dsp
+    //--------------------------------------------------------------------------------
+    if (!oddBypass)
+    {
+        applyOddDistortion(_oddBuffer, oddDriveGain);
+        _oddGain.process(juce::dsp::ProcessContextReplacing<float>(oddBlock));
+    }
+    
+    //--------------------------------------------------------------------------------
+    // Apply even dsp
+    //--------------------------------------------------------------------------------
+    if (!evenBypass)
+    {
+        applyEvenDistortion(_evenBuffer, evenDriveGain);
+        _evenGain.process(juce::dsp::ProcessContextReplacing<float>(evenBlock));
+    }
+    
+    //--------------------------------------------------------------------------------
+    // Add odd signal to output
+    //--------------------------------------------------------------------------------
+    if (!oddBypass)
+    {
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        {
+            buffer.addFrom(channel, 0, _oddBuffer, channel, 0, buffer.getNumSamples());
+        }
+    }
+    
+    //--------------------------------------------------------------------------------
+    // Add even signal to output
+    //--------------------------------------------------------------------------------
+    if (!evenBypass)
+    {
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        {
+            buffer.addFrom(channel, 0, _evenBuffer, channel, 0, buffer.getNumSamples());
+        }
+    }
+    
+    //--------------------------------------------------------------------------------
+    // Apply output volume
+    //--------------------------------------------------------------------------------
+    buffer.applyGain(outputGain);
+}
+
+void ViatordualsaturatorAudioProcessor::applyEvenDistortion(juce::AudioBuffer<float> &buffer, float drive)
+{
+    auto data = buffer.getArrayOfWritePointers();
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        {
+            auto xn = data[channel][sample];
+            auto xnHigh = _evenBandFilter.processSample(channel, xn);
+            auto evenHarmonics = 0.65 * (xnHigh + (std::abs(xnHigh * drive) - 0.5));
+            auto outputMix = evenHarmonics * 0.5 + xn;
+            data[channel][sample] = outputMix * 0.5;
+        }
+    }
+}
+
+void ViatordualsaturatorAudioProcessor::applyOddDistortion(juce::AudioBuffer<float> &buffer, float drive)
+{
+    auto data = buffer.getArrayOfWritePointers();
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        {
+            const auto xn = data[channel][sample];
+            const auto xnHigh = _oddBandFilter.processSample(channel, xn);
+            const auto softClip = _piDivisor * std::atan(xnHigh * drive);
+            const auto outputMix = softClip * 0.25 + xn;
+            data[channel][sample] = outputMix * 0.5;
+        }
+    }
 }
 
 //==============================================================================

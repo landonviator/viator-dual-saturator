@@ -62,6 +62,16 @@ public:
     
 private:
     juce::dsp::ProcessSpec _spec;
+    juce::dsp::LinkwitzRileyFilter<float> _evenBandFilter;
+    juce::dsp::LinkwitzRileyFilter<float> _oddBandFilter;
+    juce::dsp::Gain<float> _oddGain;
+    juce::dsp::Gain<float> _evenGain;
+    juce::dsp::Gain<float> _inputGain;
+    void applyEvenDistortion(juce::AudioBuffer<float>& buffer, float drive);
+    void applyOddDistortion(juce::AudioBuffer<float>& buffer, float drive);
+    juce::AudioBuffer<float> _evenBuffer;
+    juce::AudioBuffer<float> _oddBuffer;
+    juce::AudioBuffer<float> _dryBuffer;
     
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void parameterChanged (const juce::String& parameterID, float newValue) override;
@@ -71,6 +81,7 @@ private:
     void updateParameters();
     
     const int _versionNumber = 1;
+    static constexpr float _piDivisor = 2.0 / juce::MathConstants<float>::pi;
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ViatordualsaturatorAudioProcessor)
 };
