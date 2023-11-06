@@ -178,6 +178,9 @@ void ViatordualsaturatorAudioProcessor::prepareToPlay (double sampleRate, int sa
     _evenBandFilter.prepare(_spec);
     _evenBandFilter.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
     _evenBandFilter.setCutoffFrequency(1000.0);
+    _evenDcFilter.prepare(_spec);
+    _evenDcFilter.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
+    _evenDcFilter.setCutoffFrequency(15.0);
     _oddBandFilter.prepare(_spec);
     _oddBandFilter.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
     _oddBandFilter.setCutoffFrequency(1000.0);
@@ -317,7 +320,7 @@ void ViatordualsaturatorAudioProcessor::applyEvenDistortion(juce::AudioBuffer<fl
             auto xn = data[channel][sample];
             auto xnHigh = _evenBandFilter.processSample(channel, xn);
             auto evenHarmonics = 0.65 * (xnHigh + (std::abs(xnHigh * drive) - 0.5));
-            auto outputMix = evenHarmonics * 0.5 + xn;
+            auto outputMix = _evenDcFilter.processSample(channel, evenHarmonics) * 0.5 + xn;
             data[channel][sample] = outputMix * 0.5;
         }
     }

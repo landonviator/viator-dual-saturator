@@ -63,6 +63,7 @@ public:
 private:
     juce::dsp::ProcessSpec _spec;
     juce::dsp::LinkwitzRileyFilter<float> _evenBandFilter;
+    juce::dsp::LinkwitzRileyFilter<float> _evenDcFilter;
     juce::dsp::LinkwitzRileyFilter<float> _oddBandFilter;
     juce::dsp::Gain<float> _oddGain;
     juce::dsp::Gain<float> _evenGain;
